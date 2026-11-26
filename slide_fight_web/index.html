@@ -2,5 +2,13 @@
 <html lang="en"><head><meta charset="utf-8"><title>Slide Fight</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>html,body{margin:0;background:#14151b;height:100%;overflow:hidden}
+#msg{position:absolute;top:0;left:0;right:0;padding:14px;color:#ccc;font:16px Arial,sans-serif;text-align:center}
 canvas{display:block;margin:0 auto;width:min(100vw,calc(100vh*960/730));touch-action:manipulation}</style></head>
-<body><canvas id="c"></canvas><script src="game.js"></script></body></html>
+<body><p id="msg">Loading game... If this message stays, game.js could not be loaded. Press F12 and look at the Console tab.</p>
+<canvas id="c"></canvas>
+<script>
+function showErr(t){var m=document.getElementById('msg');m.style.display='block';m.style.color='#ff8080';m.textContent=t}
+addEventListener('error',function(e){if(e.target&&e.target.src)showErr('Could not load '+e.target.src+' (file missing or wrong name/path?)');else showErr('Error: '+e.message+' ('+String(e.filename).split('/').pop()+':'+e.lineno+')')},true);
+addEventListener('unhandledrejection',function(e){showErr('Error: '+(e.reason&&e.reason.message||e.reason))});
+</script>
+<script src="game.js?v=2"></script></body></html>
