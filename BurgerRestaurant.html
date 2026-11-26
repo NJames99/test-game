@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Burger Restaurant</title>
+<style>
+:root{--bg:#f3e9d8;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1f26}}
+:root[data-theme="dark"]{--bg:#1b1f26}
+html,body{height:100%;margin:0;background:var(--bg)}
+body{display:flex;align-items:center;justify-content:center;overflow:hidden}
+canvas{width:min(100vw,calc((100vh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))*800/540));aspect-ratio:800/540;touch-action:none;border-radius:8px;display:block}
+</style></head><body><canvas id="c" width="800" height="540"></canvas>
+<script>
+const C=document.getElementById('c'),g=C.getContext('2d'),W=800,H=540;
+const MAXC=8,PAT=30,SHELF_Y=213,DAY=300,MAXL=8,PICKLE_LV=3;
+const LEVELS={1:[[11,12],[1,2],0],2:[[9,12],[1,3],.15],3:[[7,11],[1,4],.25],4:[[6,10],[2,5],.35],5:[[6,10],[3,5],.45],6:[[6,10],[3,5],.55],7:[[6,10],[3,5],.55],8:[[6,10],[3,5],.6]};
+const ADV=[3,3,5,5,5,5,5],LEVEL_AT=ADV.map((_,i)=>ADV.slice(0,i+1).reduce((a,b)=>a+b));
+const BTN={x:300,y:400,w:200,h:50},BACK={x:16,y:12,w:200,h:38},MUTE={x:W-64,y:H-28,w:52,h:22};
+const DOOR={x:640,y:70,w:140,h:250},COUNTER={x:585,y:345,w:210,h:150};
+const hit=(r,p)=>p.x>=r.x&&p.x<r.x+r.w&&p.y>=r.y&&p.y<r.y+r.h;
+const rnd=(a,b)=>a+Math.random()*(b-a),ri=(a,b)=>a+(Math.random()*(b-a+1)|0),pick=a=>a[Math.random()*a.length|0];
+/* ---------- audio ---------- */
+let AC,MG,S={},live=[],muted=false;
+function mk(notes,total){const R=AC.sampleRate,n=R*total|0,b=AC.createBuffer(1,n,R),d=b.getChannelData(0);
+ for(const[f,s,du,v]of notes){const s0=s*R|0,len=du*R|0;for(let i=0;i<len&&s0+i<n;i++){const t=i/R,e=Math.min(1,t/.02)*Math.exp(-4*t/du);d[s0+i]+=(Math.sin(6.2832*f*t)+.3*Math.sin(12.5664*f*t))*e*v}}
+ for(let i=0;i<n;i++)d[i]=Math.max(-1,Math.min(1,d[i]))*.9;return b}
+function song(mel,step,bass){const n=[];mel.forEach((f,i)=>f&&n.push([f,i*step,step*1.5,.3]));bass.forEach(([f,t,d])=>n.push([f,t,d,.18]));return mk(n,mel.length*step+1)}
+function music(){const st=.2,ch=[[262,330,392],[220,262,330],[175,220,262],[196,247,294]],A=[0,1,2,1,2,1,0,null],B=[2,3,2,1,2,1,0,1],P=[A,A,A,B,B,A,B,A],n=[];
+ for(let bar=0;bar<8;bar++){const c=ch[bar%4],t0=bar*8*st,tn=[c[0]*2,c[1]*2,c[2]*2,c[0]*4];
+  P[bar].forEach((ix,i)=>ix!==null&&n.push([tn[ix],t0+i*st,st*1.7,.16]));
+  [[0,c[0]],[2,c[2]],[4,c[0]],[6,c[2]]].forEach(([i,f])=>n.push([f,t0+i*st,st*2,.2]))}
+ return mk(n,64*st)}
+function initAudio(){if(AC)return;try{AC=new(window.AudioContext||window.webkitAudioContext)();MG=AC.createGain();MG.connect(AC.destination);MG.gain.value=muted?0:1;
+ S.start=song([523,659,784,1047,784,659,784,1047,880,1047,1319,1047,784,880,988,1175,1047,0,1047,1319,1568],.16,[[262,0,.6],[330,.64,.6],[349,1.28,.6],[392,1.92,.6],[262,2.56,.6],[392,3.2,1.2],[523,3.2,1.2],[659,3.2,1.2]]);
+ S.level=mk([[784,0,.2,.3],[988,.1,.2,.3],[1175,.2,.2,.3],[1568,.3,.6,.3]],1);S.pop=mk([[520,0,.12,.35],[780,.05,.12,.3]],.2);
+ S.ding=mk([[880,0,.3,.3],[1319,.12,.5,.3]],.7);S.cheer=mk([[523,0,.2,.3],[659,.1,.2,.3],[784,.2,.2,.3],[1047,.3,.5,.3]],.9);
+ S.angry=mk([[180,0,.35,.4],[150,.2,.45,.4]],.7);S.music=music()}catch(e){AC=null}}
+function play(name,when=0,loop=false,vol=1){if(!AC||!S[name])return null;if(AC.state=='suspended')AC.resume();
+ const s=AC.createBufferSource(),gn=AC.createGain();s.buffer=S[name];s.loop=loop;gn.gain.value=vol;s.connect(gn).connect(MG);s.start(AC.currentTime+when);return s}
+function stopLive(){live.forEach(s=>{try{s.stop()}catch(e){}});live=[]}
+function toggleMute(){muted=!muted;if(MG)MG.gain.value=muted?0:1}
+/* ---------- drawing helpers ---------- */
+const rr=(c,x,y,w,h,r)=>{g.fillStyle=c;g.beginPath();g.roundRect(x,y,w,h,Math.max(0,r));g.fill()};
+const ci=(c,x,y,r)=>{g.fillStyle=c;g.beginPath();g.arc(x,y,Math.max(1,r),0,7);g.fill()};
+const el=(c,x,y,w,h)=>{g.fillStyle=c;g.beginPath();g.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,7);g.fill()};
+const tx=(m,sz,c,x,y,al='center',bl='middle')=>{g.font=`bold ${sz}px "Trebuchet MS",Arial,sans-serif`;g.fillStyle=c;g.textAlign=al;g.textBaseline=bl;g.fillText(m,x,y)};
+const R=(c,cx,by,x,y,w,h,s,r)=>rr(c,cx+x*s,by+y*s,w*s,h*s,r*s),CI=(c,cx,by,x,y,r,s)=>ci(c,cx+x*s,by+y*s,r*s);
+const hex=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16));
+const lerpc=(a,b,t)=>{a=Array.isArray(a)?a:hex(a);return`rgb(${a.map((v,i)=>v+(b[i]-v)*t|0)})`};
+function bunB(cx,by,s){R('#d9954a',cx,by,-100,-22,200,22,s,11);R('#efb467',cx,by,-92,-20,184,5,s,3)}
+function bunT(cx,by,s){g.fillStyle='#e8a24e';g.beginPath();for(let i=0;i<=40;i++){const t=Math.PI*i/40;g.lineTo(cx+100*s*Math.cos(t),by-64*s*Math.sin(t))}g.fill();
+ for(const[x,y]of[[-40,-36],[-8,-48],[30,-40],[58,-24],[2,-26],[-62,-18]])el('#fff1cf',cx+(x-5)*s,by+(y-2.5)*s,10*s,5*s)}
+function patty(cx,by,s){R('#5b3224',cx,by,-104,-22,208,22,s,11);for(const[x,y]of[[-60,-12],[-20,-8],[25,-14],[68,-9]])CI('#7a4632',cx,by,x,y,3,s)}
+function lettuce(cx,by,s){for(const[c,w,dy]of[['#4fa534',11,-5],['#86d14f',4,-8]])for(let i=0;i<225;i+=3)CI(c,cx,by,-112+i,dy-7*Math.sin(i/28*Math.PI),w/2,s)}
+function tomato(cx,by,s){R('#d93a2b',cx,by,-92,-12,184,12,s,6);for(const x of[-50,0,50])CI('#f58a6f',cx,by,x,-6,2.5,s)}
+function mayo(cx,by,s){R('#fffbe8',cx,by,-96,-7,192,7,s,3);for(const[x,y,r]of[[-97,-2,5],[98,-1,5],[-60,2,4],[40,2,3.5]])CI('#fffbe8',cx,by,x,y,r,s)}
+function pickle(cx,by,s){for(const x of[-76,-38,0,38,76]){el('#52842e',cx+(x-20)*s,by-9*s,40*s,9*s);el('#96be5a',cx+(x-13)*s,by-7.5*s,26*s,5*s)}}
+function jar(cx,by,s,pk){R('#c8e4ec',cx,by,-35,-80,70,80,s,9);g.strokeStyle='#7fb0bb';g.lineWidth=3;g.beginPath();g.roundRect(cx-35*s,by-80*s,70*s,80*s,9*s);g.stroke();
+ if(pk){R('#cddc82',cx,by,-30,-68,60,64,s,6);for(const[x,y,w,h]of[[-20,-60,16,44],[-2,-62,16,48],[16,-58,14,42]])el('#52842e',cx+x*s,by+y*s,w*s,h*s);R('#fffbe8',cx,by,-26,-40,52,18,s,4);tx('PICKLES',Math.max(8,11*s|0),'#3c6e32',cx,by-31*s);R('#3c6e32',cx,by,-38,-94,76,16,s,5)}
+ else{R('#fffbe8',cx,by,-30,-68,60,64,s,6);tx('MAYO',Math.max(8,15*s|0),'#c8352b',cx,by-34*s);R('#c8352b',cx,by,-38,-94,76,16,s,5)}}
+const jarM=(x,y,s)=>jar(x,y,s,0),jarP=(x,y,s)=>jar(x,y,s,1);
+function wholeBun(cx,by,s){bunB(cx,by,s);bunT(cx,by-22*s,s)}
+const DRAW={bunB,mayo,patty,lettuce,tomato,pickle},HEIGHT={bunB:22,mayo:7,patty:22,lettuce:10,tomato:12,pickle:8};
+const FULL=['bunB','mayo','patty','lettuce','tomato','bunT'];
+const WANTS={full:FULL,nomayo:['bunB','patty','lettuce','tomato','bunT'],plain:['bunB','mayo','patty','bunT'],pickle:['bunB','mayo','patty','lettuce','tomato','pickle','bunT']};
+const LABEL={nomayo:'no mayo',plain:'no veg',pickle:'pickles'};
+const ingr=l=>{const s=new Set(l.filter(k=>k!='bunB'&&k!='bunT'));if(l.includes('bunB'))s.add('bun');return s};
+const sameIng=(a,b)=>{const x=ingr(a),y=ingr(b);return x.size==y.size&&[...x].every(k=>y.has(k))};
+function stack(cx,base,keys,s=1,drop={}){let y=0;for(const k of keys){const yy=base-y*s-(drop[k]||0);if(k=='bunT')bunT(cx,yy,s);else{DRAW[k](cx,yy,s);y+=HEIGHT[k]-(k=='mayo'?0:1)}}}
+/* ---------- kitchen ---------- */
+const SHELF={bun:[130,.7,wholeBun,[-77,-66,154,70]],patty:[275,.7,patty,[-77,-25,154,28]],lettuce:[415,.7,lettuce,[-80,-25,160,28]],tomato:[545,.7,tomato,[-70,-25,140,28]],mayo:[655,.9,jarM,[-40,-90,80,94]],pickle:[735,.9,jarP,[-40,-90,80,94]]};
+const shelfRect=k=>{const[x,,,h]=SHELF[k];return{x:x+h[0],y:SHELF_Y+h[1],w:h[2],h:h[3]}};
+class Kitchen{constructor(){this.reset()}
+ reset(){this.bun=this.mayo=this.pending=false;this.mid=[];this.drop={}}
+ taken(k){return k=='bun'?this.bun:k=='mayo'?this.pending:this.mid.includes(k)}
+ keys(){const k=[];if(this.bun)k.push('bunB');if(this.bun&&this.mayo)k.push('mayo');k.push(...this.mid);if(this.bun)k.push('bunT');return k}
+ has(){return this.bun||this.mid.length>0}
+ hint(){return this.mayo&&!this.bun?'The mayo is on the table. Now pick the bun.':this.has()?'Click the burger on the plate to send it to the counter.':'Click ingredients on the shelf to build a burger.'}
+ rect(){if(!this.has())return null;let h=0;for(const k of this.keys())if(k!='bunT')h+=HEIGHT[k]-(k=='mayo'?0:1);if(this.bun)h+=64;return{x:285,y:410-h-8,w:230,h:h+14}}
+ pick(k){if(this.taken(k))return false;
+  if(k=='bun'){this.bun=true;this.pending=false;this.drop.bunB=this.drop.bunT=170}
+  else if(k=='mayo'){this.mayo=true;if(this.bun)this.drop.mayo=170;else{this.pending=true;this.drop.jar=170}}
+  else{this.mid.push(k);this.drop[k]=170}return true}
+ update(){for(const k in this.drop){this.drop[k]*=.78;if(this.drop[k]<.5)delete this.drop[k]}}}
+function drawKitchen(k,m,cn,pickles){
+ g.fillStyle='#2f7f86';g.fillRect(0,0,W,H);
+ for(let ty=0;ty<420;ty+=40)for(let tx_=0;tx_<W;tx_+=40)rr('#3a9199',tx_+1,ty+1,38,38,3);
+ rr('#8a5a33',40,215,740,16,3);g.fillStyle='#5e3a1d';g.fillRect(40,231,740,5);g.fillRect(70,236,14,30);g.fillRect(716,236,14,30);
+ for(const key in SHELF){if(k.taken(key)||(key=='pickle'&&!pickles))continue;const[x,s,fn]=SHELF[key];fn(x,SHELF_Y+(hit(shelfRect(key),m)?-7:0),s)}
+ for(let ty=420;ty<H;ty+=24)for(let tx_=0;tx_<W;tx_+=24){g.fillStyle=((tx_/24+ty/24)%2==0)?'#fff3df':'#c8352b';g.fillRect(tx_,ty,24,24)}
+ g.fillStyle='#a8681f';g.fillRect(0,410,W,14);g.fillStyle='#784814';g.fillRect(0,424,W,4);
+ el('#f4f1ee',260,402,280,24);el('#e2ddd8',282,403,236,16);
+ if(k.pending)jarM(640,414-(k.drop.jar||0),.9);
+ stack(400,410,k.keys(),1,k.drop);
+ const br=k.rect();if(br&&hit(br,m)){g.strokeStyle='#ffdc3c';g.lineWidth=3;g.beginPath();g.roundRect(br.x,br.y,br.w,br.h,10);g.stroke()}
+ rr(hit(BACK,m)?'#ffb627':'#f09614',BACK.x,BACK.y,BACK.w,BACK.h,19);tx('< Back to restaurant',16,'#3a2200',BACK.x+100,BACK.y+19);
+ tx('Kitchen',28,'#fff7e6',W/2,24);tx(k.hint(),18,'#e6f0f3',W/2,54);tx(`Counter: ${cn}/${MAXC}`,18,'#fff7e6',W-16,50,'right')}
+/* ---------- restaurant ---------- */
+const cbRect=i=>{const cx=618+(i%4)*50,base=405+(i>>2)*55;return[{x:cx-23,y:base-32,w:46,h:36},cx,base]};
+const SKIN=['#ffdbb1','#e0ac7d','#b47d55','#785037'],SHIRT=['#4682c8','#c85a8c','#5aaa6e','#e6a03c','#8c64c8'],HAIR=['#3c281e','#1e1e1e','#c89646','#964628','#bebebe'];
+class Table{constructor(x,y){this.x=x;this.y=y;this.occ=null}rect(){return{x:this.x-58,y:this.y-20,w:116,h:60}}}
+class Cust{constructor(y,lv){this.x=-30;this.y=y;this.tx=this.x;this.ty=y;this.state='waiting';this.maxP=this.patience=Math.max(18,PAT+3-lv);
+ const[,[lo,hi],picky]=LEVELS[Math.min(lv,MAXL)],kinds=['nomayo','plain'].concat(lv>=PICKLE_LV?['pickle']:[]);
+ this.kind=Math.random()<picky?pick(kinds):'full';this.wants=this.left=this.kind=='full'?ri(lo,hi):1;this.layers=WANTS[this.kind];
+ this.table=null;this.mood='ok';this.skin=pick(SKIN);this.shirt=pick(SHIRT);this.hair=pick(HAIR)}
+ rect(){return{x:this.x-24,y:this.y-92,w:48,h:92}}}
+function drawCust(c,sel){const x=c.x|0,y=c.y|0,mad={mad:.6,angry:.85}[c.mood]||0,face=lerpc(c.skin,[225,80,70],mad);
+ if(sel){g.strokeStyle='#ffdc3c';g.lineWidth=3;g.beginPath();g.ellipse(x,y+1,30,9,0,0,7);g.stroke()}
+ if(c.state!='seated')for(const dx of[-12,2])rr('#323246',x+dx,y-16,10,16,3);
+ rr(c.shirt,x-18,y-52,36,c.state!='seated'?40:52,12);ci(face,x,y-66,16);el(c.hair,x-17,y-84,34,14);
+ for(const dx of[-6,6])ci('#1e1e1e',x+dx,y-65,2);
+ g.strokeStyle='#3c1e1e';g.lineWidth=2;g.beginPath();
+ const ln=(a,b,c_,d)=>{g.moveTo(a,b);g.lineTo(c_,d)};
+ if(c.mood=='mad'||c.mood=='angry'){ln(x-10,y-73,x-2,y-69);ln(x+10,y-73,x+2,y-69);g.stroke();g.beginPath();g.ellipse(x,y-53,7,5,0,Math.PI,2*Math.PI);g.stroke()}
+ else if(c.mood=='meh'){ln(x-5,y-55,x+5,y-55);g.stroke()}
+ else if(c.mood=='happy'){g.lineWidth=3;g.ellipse(x,y-56,9,6,0,0,Math.PI);g.stroke()}
+ else{g.ellipse(x,y-56,6,4,0,0,Math.PI);g.stroke()}}
+function drawBubble(c){const x=c.x|0,y=c.y|0,bw=c.kind=='full'?100:130;ci('#fff',x+4,y-96,4);ci('#fff',x+8,y-106,6);rr('#fff',x-6,y-170,bw,56,26);
+ g.strokeStyle='#bebec8';g.lineWidth=2;g.beginPath();g.roundRect(x-6,y-170,bw,56,26);g.stroke();stack(x+22,y-124,c.layers,.2);
+ c.kind=='full'?tx('x'+c.left,26,'#3c281e',x+46,y-142,'left'):tx(LABEL[c.kind],17,'#be281e',x+46,y-142,'left')}
+/* ---------- game ---------- */
+const G={state:'title',kitchen:new Kitchen(),mouse:{x:0,y:0},toast:['',0]};
+function clearRest(){G.kitchen.reset();G.scene='restaurant';G.tables=[new Table(290,255),new Table(480,255),new Table(290,425),new Table(480,425)];
+ G.customers=[];G.counter=[];G.sel=null;G.served=G.lost=0;G.spawn=2;G.time=DAY;G.toast=['',0]}
+function say(m){G.toast=[m,performance.now()+2600]}
+function reset(){clearRest();G.day=1;G.total=0;G.banner=null;say('Welcome! Click a waiting customer, then a table.')}
+const level=()=>1+LEVEL_AT.filter(n=>G.total>=n).length;
+const waiting=()=>G.customers.filter(c=>c.state=='waiting');
+function start(){initAudio();stopLive();reset();G.state='playing';const s=play('start');if(s)live.push(s);
+ if(AC&&S.start){const m=play('music',S.start.duration,true,.35);if(m)live.push(m)}}
+function newDay(){G.banner={t:'day',day:G.day+1,served:G.served,lost:G.lost};G.day++;clearRest();play('level')}
+function update(dt){if(G.state!='playing'||G.banner)return;
+ G.time-=dt;if(G.time<=0){newDay();return}
+ G.spawn-=dt;if(G.spawn<=0){const w=waiting();if(w.length<4)G.customers.push(new Cust(250+75*w.length,level()));G.spawn=rnd(...LEVELS[level()][0])}
+ waiting().forEach((c,i)=>{c.tx=62;c.ty=250+75*i;c.patience-=dt;const p=c.patience/c.maxP;c.mood=p>.55?'ok':p>.25?'meh':'mad';
+  if(c.patience<=0){c.state='leaving';c.mood='angry';c.tx=-70;c.ty=c.y;G.lost++;play('angry');say('A customer got tired of waiting and left!');if(G.sel&&G.sel[1]===c)G.sel=null}});
+ for(const c of G.customers.slice()){const dx=c.tx-c.x,dy=c.ty-c.y,d=Math.hypot(dx,dy),st=150*dt;
+  if(d<=st){c.x=c.tx;c.y=c.ty;if(c.state=='walking'){c.state='seated';c.mood='ok'}}else{c.x+=dx/d*st;c.y+=dy/d*st}
+  if(c.state=='leaving'&&c.x<-40)G.customers.splice(G.customers.indexOf(c),1)}
+ G.kitchen.update()}
+function leave(c,mood){c.state='leaving';c.mood=mood;c.table.occ=null;c.table=null;c.tx=-70;c.ty=c.y}
+function seat(c,t){c.state='walking';c.table=t;t.occ=c;c.tx=t.x;c.ty=t.y+10;c.mood='ok';G.sel=null;play('pop')}
+function serve(c){const layers=G.counter.splice(G.sel[1],1)[0];G.sel=null;
+ if(!sameIng(layers,c.layers)){leave(c,'angry');G.lost++;play('angry');say('Wrong burger! The customer left unhappy.');return}
+ c.left--;play('pop');
+ if(c.left<=0){leave(c,'happy');const before=level();G.served++;G.total++;
+  if(level()>before){G.banner={t:'level',n:level()};play('level')}else{play('cheer');say('Happy customer! Table is free.')}}}
+function click(p){
+ if(G.state!='playing'){if(hit(BTN,p))start();return}
+ if(hit(MUTE,p)){toggleMute();return}
+ if(G.banner){if(hit(BTN,p))G.banner=null;return}
+ if(G.scene=='kitchen')return clickKitchen(p);
+ for(const c of G.customers.slice().reverse())if(c.state!='leaving'&&hit(c.rect(),p))return clickCust(c);
+ for(const t of G.tables)if(hit(t.rect(),p))return clickTable(t);
+ for(let i=0;i<G.counter.length;i++)if(hit(cbRect(i)[0],p)){G.sel=G.sel&&G.sel[0]=='burger'&&G.sel[1]==i?null:['burger',i];play('pop');return}
+ if(hit(DOOR,p)){G.scene='kitchen';G.sel=null;play('pop');return}
+ G.sel=null}
+function clickCust(c){const s=G.sel;
+ if(s&&s[0]=='burger'){if(c.state=='seated'&&c.left>0)serve(c);else if(c.state=='waiting')say('Seat that customer first.');return}
+ if(c.state=='waiting'){G.sel=s&&s[1]===c?null:['cust',c];play('pop')}else if(c.state=='seated')say('Click a burger on the counter first.')}
+function clickTable(t){const s=G.sel;
+ if(s&&s[0]=='burger'){const c=t.occ;if(c&&c.state=='seated'&&c.left>0)serve(c);else say(c?'Wait until they sit down.':'Nobody is sitting there.')}
+ else if(s&&s[0]=='cust'){t.occ?say('That table is taken.'):seat(s[1],t)}
+ else if(!t.occ)say('Click a waiting customer first.')}
+function clickKitchen(p){const k=G.kitchen;
+ if(hit(BACK,p)){G.scene='restaurant';play('pop');return}
+ const br=k.rect();
+ if(br&&hit(br,p)){if(G.counter.length>=MAXC)say('The counter is full! Serve some burgers first.');else{G.counter.push(k.keys());k.reset();play('ding');say('Burger sent to the counter!')}return}
+ for(const key in SHELF){if(key=='pickle'&&level()<PICKLE_LV)continue;if(hit(shelfRect(key),p)&&!k.taken(key)){if(k.pick(key))play('pop');return}}}
+/* ---------- screens ---------- */
+function panel(title,sub){g.fillStyle='rgba(15,20,30,.69)';g.fillRect(0,0,W,H);rr('#fff7e6',110,70,580,400,24);
+ if(sub!==undefined){g.fillStyle='#ffb627';g.beginPath();g.roundRect(110,70,580,92,[24,24,0,0]);g.fill();tx(title,42,'#3a2200',W/2,104);tx(sub,22,'#3a2200',W/2,143)}
+ else tx(title,40,'#3a2200',W/2,120)}
+function button(label){rr(hit(BTN,G.mouse)?'#ffb627':'#f09614',BTN.x,BTN.y,BTN.w,BTN.h,25);tx(label,24,'#3a2200',W/2,BTN.y+25)}
+function drawBanner(){const b=G.banner;let lines;
+ if(b.t=='day'){panel('A new day begins!',`Day ${b.day}`);const s=n=>n==1?'':'s';
+  lines=[[`Yesterday you served ${b.served} customer${s(b.served)}.`,22],[`${b.lost} customer${s(b.lost)} walked out.`,22],['The restaurant is clean and empty again.',18],[`You are still on level ${level()}. Good luck!`,18]]}
+ else{panel('Next level!',`Level ${b.n}`);
+  lines=b.n==2?[['Picky customers have arrived!',22],['They order ONE burger made a special way.',18],['Check their thought bubble:',18],["'no mayo' means leave the mayo off.",18],["'no veg' means no lettuce and no tomato.",18],['Serve the wrong burger and they leave unhappy.',18]]
+  :b.n==PICKLE_LV?[['A jar of pickles is now on the kitchen shelf!',22],['Some picky customers want pickles on their burger.',18],["Their thought bubble says 'pickles'.",18],['Nobody else wants pickles, so keep them off other burgers!',18]]
+  :[['Customers arrive faster and order more burgers.',18],['They are a little less patient, too. Keep it up!',18]]}
+ let y=195;for(const[l,sz]of lines){tx(l,sz,'#463228',W/2,y);y+=sz==22?32:29}button('Continue')}
+function drawTitle(){panel('Burger Restaurant');let y=190;
+ for(const l of['Click a customer, then a table to seat them.','Cook in the kitchen, then click your burger to send it.','Click a counter burger, then the customer to serve it.','Picky customers want special burgers. Check the bubbles!','Each day lasts 5 minutes. Serve customers to level up!']){tx(l,18,'#463228',W/2,y);y+=40}button('Start')}
+function drawRest(){const m=G.mouse;
+ g.fillStyle='#7ea080';g.fillRect(0,0,W,150);g.fillStyle='#b07c4c';g.fillRect(0,150,W,H-150);
+ g.strokeStyle='#96643a';g.lineWidth=2;for(let y=160;y<H;y+=30){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+ g.fillStyle='#5a3c28';g.fillRect(0,150,14,160);tx('Waiting',16,'#fff0d2',20,168,'left');
+ rr('#b4dceb',120,40,110,70,6);g.strokeStyle='#5a3c28';g.lineWidth=4;g.beginPath();g.roundRect(120,40,110,70,6);g.stroke();
+ const hov=hit(DOOR,m)&&!G.sel;rr('#5a3c28',DOOR.x-7,DOOR.y-5,DOOR.w+14,DOOR.h+10,8);rr(hov?'#bec8cd':'#96a0a5',DOOR.x,DOOR.y,DOOR.w,DOOR.h,6);
+ const dx=DOOR.x+70;ci('#c8e1eb',dx,DOOR.y+70,34);g.strokeStyle='#646e73';g.lineWidth=4;g.beginPath();g.arc(dx,DOOR.y+70,34,0,7);g.stroke();
+ tx('KITCHEN',24,'#c8352b',dx,DOOR.y+150);tx('click to cook',14,'#3c3c46',dx,DOOR.y+175);
+ rr('#5f5f69',COUNTER.x,COUNTER.y-7,COUNTER.w,COUNTER.h+14,8);rr('#cdcdd4',COUNTER.x,COUNTER.y,COUNTER.w,COUNTER.h,8);tx('Counter',14,'#3c3c46',COUNTER.x+105,COUNTER.y+COUNTER.h-10);
+ G.counter.forEach((l,i)=>{const[r,cx,base]=cbRect(i);if(G.sel&&G.sel[0]=='burger'&&G.sel[1]==i){g.strokeStyle='#ffdc3c';g.lineWidth=3;g.beginPath();g.roundRect(r.x-4,r.y-4,r.w+8,r.h+8,8);g.stroke()}stack(cx,base,l,.22)});
+ const wantT=G.sel&&G.sel[0]=='cust';
+ for(const t of G.tables.slice().sort((a,b)=>a.y-b.y)){if(t.occ&&t.occ.state=='seated')drawCust(t.occ);
+  g.fillStyle='#6e4623';g.fillRect(t.x-6,t.y+10,12,34);el('#c8352b',t.x-56,t.y-16,112,40);el('#fff3df',t.x-44,t.y-11,88,28);
+  if(wantT&&!t.occ){g.strokeStyle='#ffdc3c';g.lineWidth=4;g.beginPath();g.ellipse(t.x,t.y+4,62,26,0,0,7);g.stroke()}}
+ for(const c of G.customers)if(c.state!='seated'){drawCust(c,G.sel&&G.sel[0]=='cust'&&G.sel[1]===c);
+  if(c.state=='waiting'){const f=Math.max(0,c.patience/c.maxP);rr('#322828',c.x-22,c.y-100,44,7,3);rr(lerpc([220,50,40],[80,200,80],f),c.x-22,c.y-100,44*f,7,3)}}
+ for(const c of G.customers)if(c.state=='seated'&&c.left>0)drawBubble(c);
+ tx('Burger Restaurant',28,'#fff7e6',W/2,24);tx(`Served: ${G.served}   Walked out: ${G.lost}`,16,'#fff7e6',16,22,'left');
+ tx(G.sel&&G.sel[0]=='cust'?'Click an empty table to seat this customer.':G.sel?'Click a seated customer or their table to serve it.':'Click a waiting customer to seat them. Click the kitchen to cook.',17,'#ebf5eb',W/2,54)}
+function draw(){
+ if(G.scene=='kitchen')drawKitchen(G.kitchen,G.mouse,G.counter.length,level()>=PICKLE_LV);else drawRest();
+ if(G.state!='playing'){drawTitle();return}
+ const t=Math.ceil(G.time);tx(`Day ${G.day}   Level ${level()}    ${t/60|0}:${String(t%60).padStart(2,'0')}`,20,t<=30?'#ff7864':'#fff7e6',W-16,22,'right');
+ rr('rgba(0,0,0,.35)',MUTE.x,MUTE.y,MUTE.w,MUTE.h,11);tx(muted?'Sound off':'Sound on',11,'#fff',MUTE.x+26,MUTE.y+11);
+ if(G.banner)drawBanner();
+ const[m,u]=G.toast;if(m&&performance.now()<u){g.font='bold 18px "Trebuchet MS",Arial,sans-serif';const w=g.measureText(m).width+30;rr('#ffc846',W/2-60-w/2,516-16,w,32,18);tx(m,18,'#3a2200',W/2-60,516)}}
+/* ---------- input / loop ---------- */
+const pos=e=>{const r=C.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}};
+C.addEventListener('pointermove',e=>G.mouse=pos(e));
+C.addEventListener('pointerdown',e=>{e.preventDefault();initAudio();G.mouse=pos(e);click(G.mouse)});
+addEventListener('keydown',e=>{
+ if(e.key=='Escape'&&G.scene=='kitchen')G.scene='restaurant';
+ else if((e.key=='Enter'||e.key==' ')&&G.banner){G.banner=null;e.preventDefault()}
+ else if(e.key=='r'||e.key=='R'||((e.key=='Enter'||e.key==' ')&&G.state!='playing')){e.preventDefault();start()}
+ else if(e.key=='m'||e.key=='M')toggleMute()});
+reset();let last=performance.now();
+(function loop(now){update(Math.min(.1,(now-last)/1000));last=now;draw();requestAnimationFrame(loop)})(last);
+</script></body></html>
