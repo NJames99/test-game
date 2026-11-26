@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burger Restaurant</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1f2a30}
+@media (prefers-color-scheme:light){:root{--bg:#2b3a42}}
+html,body{margin:0;height:100%;background:var(--bg)}
+body{display:flex;align-items:center;justify-content:center}
+canvas{width:min(100vw,calc(100vh*800/540));height:auto;aspect-ratio:800/540;touch-action:manipulation;cursor:pointer}
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="540"></canvas>
+<script>
+const cv=document.getElementById('c'),x=cv.getContext('2d'),W=800,H=540,SY=213,F='Fredoka,"Trebuchet MS",sans-serif';
+// ---------- sound ----------
+let ac;
+function au(){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();if(ac.state=='suspended')ac.resume()}catch(e){}}
+function tone(f,t,d,v){if(!ac)return;const o=ac.createOscillator(),g=ac.createGain(),s=ac.currentTime+t;o.type='triangle';o.frequency.value=f;
+ g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(v,s+.02);g.gain.exponentialRampToValueAtTime(.001,s+d);o.connect(g).connect(ac.destination);o.start(s);o.stop(s+d+.05)}
+function song(m,st,b){m.forEach((f,i)=>f&&tone(f,i*st,st*1.6,.22));b.forEach(([f,t,d])=>tone(f,t,d,.1))}
+const S={
+pop(){tone(520,0,.12,.2);tone(780,.05,.12,.15)},
+ding(){tone(880,0,.3,.2);tone(1319,.12,.5,.2)},
+cheer(){[523,659,784,1047].forEach((f,i)=>tone(f,i*.1,.3,.2))},
+angry(){tone(180,0,.35,.3);tone(150,.2,.45,.3)},
+level(){[784,988,1175,1568].forEach((f,i)=>tone(f,i*.1,.4,.22))},
+start(){song([523,659,784,1047,784,659,784,1047,880,1047,1319,1047,784,880,988,1175,1047,0,1047,1319,1568],.16,[[262,0,.6],[330,.64,.6],[349,1.28,.6],[392,1.92,.6],[262,2.56,.6],[392,3.2,1.2],[523,3.2,1.2],[659,3.2,1.2]])},
+end(){song([1047,988,880,784,880,1047,1319,1047,880,784,880,988,1047,0,1319,1568,1319,1047,1319,1568,2093],.17,[[262,0,.6],[220,.68,.6],[262,1.36,.6],[196,2.04,.6],[262,2.72,.6],[392,3.4,1.3],[523,3.4,1.3],[659,3.4,1.3]])}};
+// ---------- drawing helpers ----------
+const rr=(a,b,w,h,r,c)=>{x.fillStyle=c;x.beginPath();x.roundRect(a,b,w,h,r);x.fill()};
+const el=(a,b,rx,ry,c)=>{x.fillStyle=c;x.beginPath();x.ellipse(a,b,rx,ry,0,0,7);x.fill()};
+const tx=(s,a,b,z,c,al)=>{x.font=`700 ${z}px ${F}`;x.fillStyle=c;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,a,b)};
+const at=(cx,by,s,f)=>{x.save();x.translate(cx,by);x.scale(s,s);f();x.restore()};
+const mix=(a,b,t)=>`rgb(${a.map((v,i)=>v+(b[i]-v)*t|0)})`;
+const inR=(r,p)=>p.x>=r[0]&&p.x<=r[0]+r[2]&&p.y>=r[1]&&p.y<=r[1]+r[3];
+const HT={bunB:22,mayo:7,patty:22,lettuce:10,tomato:12,pickle:8};
+const D={
+bunB(){rr(-100,-22,200,22,11,'#d9954a');rr(-92,-20,184,5,2.5,'#efb467')},
+bunT(){x.fillStyle='#e8a24e';x.beginPath();x.moveTo(-100,0);x.quadraticCurveTo(-104,-64,0,-64);x.quadraticCurveTo(104,-64,100,0);x.fill();
+ [[-40,-36],[-8,-48],[30,-40],[58,-24],[2,-26],[-62,-18]].forEach(([a,b])=>el(a,b,5,2.5,'#fff1cf'))},
+patty(){rr(-104,-22,208,22,11,'#5b3224');[[-60,-12],[-20,-8],[25,-14],[68,-9]].forEach(([a,b])=>el(a,b,3,3,'#7a4632'))},
+lettuce(){x.lineCap='round';[['#4fa534',11,-5],['#86d14f',4,-8]].forEach(([c,w,dy])=>{x.strokeStyle=c;x.lineWidth=w;x.beginPath();
+ for(let i=0;i<=224;i+=2){const px=-112+i,py=dy-7*Math.sin(i/28*Math.PI);i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke()})},
+tomato(){rr(-92,-12,184,12,6,'#d93a2b');[-50,0,50].forEach(a=>el(a,-6,2.5,2.5,'#f58a6f'))},
+mayo(){rr(-96,-7,192,7,3.5,'#fffbe8');[[-97,-2,5],[98,-1,5],[-60,2,4],[40,2,3.5]].forEach(([a,b,r])=>el(a,b,r,r,'#fffbe8'))},
+pickle(){[-76,-38,0,38,76].forEach(a=>{el(a,-4.5,20,4.5,'#52842e');el(a,-4.5,13,2.5,'#96be5a')})},
+whole(){D.bunB();at(0,-22,1,D.bunT)},
+jmayo(){jar(0)},jpickle(){jar(1)}};
+function jar(p){rr(-35,-80,70,80,9,'#c8e4ec');x.strokeStyle='#7fb0bb';x.lineWidth=3;x.beginPath();x.roundRect(-35,-80,70,80,9);x.stroke();
+ if(!p){rr(-30,-68,60,64,6,'#fffbe8');tx('MAYO',0,-34,15,'#c8352b');rr(-38,-94,76,16,5,'#c8352b')}
+ else{rr(-30,-68,60,64,6,'#cddc82');[[-12,-38,8,22],[7,-38,8,24],[23,-37,7,21]].forEach(([a,b,rx,ry])=>el(a,b,rx,ry,'#52842e'));
+  rr(-26,-40,52,18,4,'#fffbe8');tx('PICKLES',0,-31,11,'#3c6e32');rr(-38,-94,76,16,5,'#3c6e32')}}
+function stack(L,cx,base,s,drop={}){let y=0;L.forEach(k=>{at(cx,base-y*s-(drop[k]||0),s,D[k]);if(k!='bunT')y+=HT[k]-(k=='mayo'?0:1)})}
+const FULL=['bunB','mayo','patty','lettuce','tomato','bunT'];
+const WANTS={full:FULL,nomayo:['bunB','patty','lettuce','tomato','bunT'],plain:['bunB','mayo','patty','bunT'],pickle:['bunB','mayo','patty','lettuce','tomato','pickle','bunT']};
+const LABEL={nomayo:'no mayo',plain:'no veg',pickle:'pickles'};
+const ing=L=>{const s=new Set(L.filter(k=>k!='bunB'&&k!='bunT'));if(L.includes('bunB'))s.add('bun');return [...s].sort().join()};
+// ---------- layout ----------
+const SHELF=[['bun',130,.7,'whole',[-77,-66,154,70]],['patty',275,.7,'patty',[-77,-25,154,28]],['lettuce',415,.7,'lettuce',[-80,-25,160,28]],
+ ['tomato',545,.7,'tomato',[-70,-25,140,28]],['mayo',655,.9,'jmayo',[-40,-90,80,94]],['pickle',735,.9,'jpickle',[-40,-90,80,94]]];
+const sr=i=>[i[1]+i[4][0],SY+i[4][1],i[4][2],i[4][3]];
+const KDOOR=[640,70,140,250],COUNTER=[585,345,210,150],BACK=[16,12,200,38],BTN=[300,400,200,50];
+const brect=i=>{const cx=618+(i%4)*50,b=405+(i>>2)*55;return{r:[cx-23,b-32,46,36],cx,b}};
+const SKIN=[[255,219,177],[224,172,125],[180,125,85],[120,80,55]],SHIRT=['#4682c8','#c85a8c','#5aaa6e','#e6a03c','#8c64c8'],HAIR=['#3c281e','#1e1e1e','#c8963c','#964628','#bebebe'];
+const pick=a=>a[Math.random()*a.length|0],rnd=(a,b)=>a+Math.random()*(b-a),ri=(a,b)=>a+(Math.random()*(b-a+1)|0);
+// ---------- state ----------
+let G,K,mouse={x:0,y:0},last=performance.now();
+const lvl=()=>1+(G.served/5|0);
+function newK(){return{bun:false,mayo:false,pend:false,mid:[],drop:{}}}
+const kHas=()=>K.bun||K.mid.length>0;
+const kTaken=id=>id=='bun'?K.bun:id=='mayo'?K.pend:K.mid.includes(id);
+function kKeys(){const k=[];if(K.bun)k.push('bunB');if(K.bun&&K.mayo)k.push('mayo');k.push(...K.mid);if(K.bun)k.push('bunT');return k}
+function kRect(){if(!kHas())return null;let h=0;kKeys().forEach(k=>{if(k!='bunT')h+=HT[k]-(k=='mayo'?0:1)});if(K.bun)h+=64;return[285,402-h,230,h+14]}
+function kPick(id){if(kTaken(id)||(id=='mayo'&&K.mayo))return false;
+ if(id=='bun'){K.bun=true;K.pend=false;K.drop.bunB=K.drop.bunT=170}
+ else if(id=='mayo'){K.mayo=true;if(K.bun)K.drop.mayo=170;else{K.pend=true;K.drop.jar=170}}
+ else{K.mid.push(id);K.drop[id]=170}return true}
+function newGame(){G={st:G?G.st:'title',scene:'r',tables:[[290,255],[480,255],[290,425],[480,425]].map(([a,b])=>({x:a,y:b,o:null})),C:[],counter:[],sel:null,served:0,lost:0,spawn:2,time:300,banner:null,toast:{m:'Welcome! Click a waiting customer, then a table.',u:performance.now()+2600}};K=newK()}
+function start(){newGame();G.st='play';S.start()}
+const say=m=>G.toast={m,u:performance.now()+2600};
+function mkC(y,L){const picky=L<3?0:Math.min(.6,.2+.1*(L-3)),kinds=['nomayo','plain'].concat(L>=5?['pickle']:[]);
+ const kind=Math.random()<picky?pick(kinds):'full',n=kind=='full'?ri(L<4?1:2,Math.min(5,1+L)):1;
+ return{x:-30,y,tx:-30,ty:y,st:'waiting',mp:Math.max(18,33-L),pat:Math.max(18,33-L),kind,left:n,layers:WANTS[kind],table:null,mood:'ok',skin:pick(SKIN),shirt:pick(SHIRT),hair:pick(HAIR)}}
+function leave(c,mood){c.st='leaving';c.mood=mood;if(c.table){c.table.o=null;c.table=null}c.tx=-70;c.ty=c.y}
+function upd(dt){
+ for(const k in K.drop){K.drop[k]*=Math.pow(.78,dt*60);if(K.drop[k]<.5)delete K.drop[k]}
+ if(G.st!='play'||G.banner)return;
+ if((G.time-=dt)<=0){G.time=0;G.st='over';G.scene='r';G.sel=null;S.end();return}
+ if((G.spawn-=dt)<=0){const w=G.C.filter(c=>c.st=='waiting');if(w.length<4)G.C.push(mkC(250+75*w.length,lvl()));const f=Math.max(2.5,11-1.2*(lvl()-1));G.spawn=rnd(f,f+4)}
+ G.C.filter(c=>c.st=='waiting').forEach((c,i)=>{c.tx=62;c.ty=250+75*i;c.pat-=dt;const p=c.pat/c.mp;c.mood=p>.55?'ok':p>.25?'meh':'mad';
+  if(c.pat<=0){leave(c,'angry');G.lost++;S.angry();say('A customer got tired of waiting and left!');if(G.sel&&G.sel.c===c)G.sel=null}});
+ G.C=G.C.filter(c=>{const dx=c.tx-c.x,dy=c.ty-c.y,d=Math.hypot(dx,dy),st=150*dt;
+  if(d<=st){c.x=c.tx;c.y=c.ty;if(c.st=='walking'){c.st='seated';c.mood='ok'}}else{c.x+=dx/d*st;c.y+=dy/d*st}
+  return!(c.st=='leaving'&&c.x<-40)})}
+// ---------- actions ----------
+function serve(c){const L=G.counter.splice(G.sel.i,1)[0];G.sel=null;
+ if(ing(L)!=ing(c.layers)){leave(c,'angry');G.lost++;S.angry();say('Wrong burger! The customer left unhappy.');return}
+ c.left--;S.pop();
+ if(c.left<=0){leave(c,'happy');G.served++;if(G.served%5==0){G.banner=lvl();S.level()}else{S.cheer();say('Happy customer! Table is free.')}}}
+function click(p){
+ if(G.st!='play'){if(inR(BTN,p))start();return}
+ if(G.banner){if(inR(BTN,p))G.banner=null;return}
+ if(G.scene=='k')return clickK(p);
+ for(const c of [...G.C].reverse())if(c.st!='leaving'&&inR([c.x-24,c.y-92,48,92],p))return clickC(c);
+ for(const t of G.tables)if(inR([t.x-58,t.y-20,116,60],p))return clickT(t);
+ for(let i=0;i<G.counter.length;i++)if(inR(brect(i).r,p)){G.sel=G.sel&&G.sel.t=='b'&&G.sel.i==i?null:{t:'b',i};S.pop();return}
+ if(inR(KDOOR,p)){G.scene='k';G.sel=null;S.pop();return}
+ G.sel=null}
+function clickC(c){
+ if(G.sel&&G.sel.t=='b'){if(c.st=='seated'&&c.left>0)serve(c);else if(c.st=='waiting')say('Seat that customer first.');return}
+ if(c.st=='waiting'){G.sel=G.sel&&G.sel.c===c?null:{t:'c',c};S.pop()}else if(c.st=='seated')say('Click a burger on the counter first.')}
+function clickT(t){const s=G.sel,o=t.o;
+ if(s&&s.t=='b'){if(o&&o.st=='seated'&&o.left>0)serve(o);else say(o?'Wait until they sit down.':'Nobody is sitting there.')}
+ else if(s&&s.t=='c'){if(o)say('That table is taken.');else{const c=s.c;c.st='walking';c.table=t;t.o=c;c.tx=t.x;c.ty=t.y+10;c.mood='ok';G.sel=null;S.pop()}}
+ else if(!o)say('Click a waiting customer first.')}
+function clickK(p){
+ if(inR(BACK,p)){G.scene='r';S.pop();return}
+ const br=kRect();
+ if(br&&inR(br,p)){if(G.counter.length>=8)say('The counter is full! Serve some burgers first.');else{G.counter.push(kKeys());K=newK();S.ding();say('Burger sent to the counter!')}return}
+ for(const i of SHELF){if(i[0]=='pickle'&&lvl()<5)continue;if(inR(sr(i),p)&&!kTaken(i[0])){if(kPick(i[0]))S.pop();return}}}
+// ---------- drawing ----------
+function dc(c,sel){const X=c.x,Y=c.y,m={mad:.6,angry:.85}[c.mood]||0;
+ if(sel){x.strokeStyle='#ffdc3c';x.lineWidth=3;x.beginPath();x.ellipse(X,Y+1,30,9,0,0,7);x.stroke()}
+ if(c.st!='seated'){rr(X-12,Y-16,10,16,3,'#323246');rr(X+2,Y-16,10,16,3,'#323246')}
+ rr(X-18,Y-52,36,c.st=='seated'?52:40,12,c.shirt);
+ el(X,Y-66,16,16,mix(c.skin,[225,80,70],m));el(X,Y-77,17,7,c.hair);el(X-6,Y-65,2,2,'#1e1e1e');el(X+6,Y-65,2,2,'#1e1e1e');
+ x.strokeStyle='#3c1e1e';x.lineWidth=2;x.beginPath();
+ if(c.mood=='mad'||c.mood=='angry'){x.moveTo(X-10,Y-73);x.lineTo(X-2,Y-69);x.moveTo(X+10,Y-73);x.lineTo(X+2,Y-69);x.moveTo(X+6,Y-52);x.arc(X,Y-52,6,0,Math.PI,true)}
+ else if(c.mood=='meh'){x.moveTo(X-5,Y-55);x.lineTo(X+5,Y-55)}
+ else if(c.mood=='happy'){x.lineWidth=3;x.arc(X,Y-60,9,.1,Math.PI-.1)}
+ else x.arc(X,Y-60,6,.2,Math.PI-.2);
+ x.stroke()}
+function bubble(c){const X=c.x,Y=c.y,bw=c.kind=='full'?100:130;el(X+4,Y-96,4,4,'#fff');el(X+8,Y-106,6,6,'#fff');
+ rr(X-6,Y-170,bw,56,26,'#fff');x.strokeStyle='#bebec8';x.lineWidth=2;x.beginPath();x.roundRect(X-6,Y-170,bw,56,26);x.stroke();
+ stack(c.layers,X+22,Y-124,.2);c.kind=='full'?tx('x'+c.left,X+46,Y-142,26,'#3c281e','left'):tx(LABEL[c.kind],X+46,Y-142,17,'#be281e','left')}
+function tiles(){x.fillStyle='#2f7f86';x.fillRect(0,0,W,420);for(let y=0;y<420;y+=40)for(let a=0;a<W;a+=40)rr(a+1,y+1,38,38,3,'#3a9199')}
+function cloth(){for(let y=420;y<H;y+=24)for(let a=0;a<W;a+=24)rr(a,y,24,24,0,((a/24+y/24)&1)?'#c8352b':'#fff3df');rr(0,410,W,14,0,'#a8681f');rr(0,424,W,4,0,'#78481499')}
+function plate(){el(400,414,140,12,'#f4f1ee');el(400,411,118,8,'#e2ddd8')}
+function btn(r,l,sz){const h=inR(r,mouse);rr(r[0],r[1],r[2],r[3],r[3]/2,h?'#ffb627':'#f09614');tx(l,r[0]+r[2]/2,r[1]+r[3]/2+1,sz,'#3a2200')}
+function drawK(){tiles();rr(40,215,740,16,3,'#8a5a33');rr(40,231,740,5,0,'#5e3a1d');rr(70,236,14,30,0,'#5e3a1d');rr(716,236,14,30,0,'#5e3a1d');
+ SHELF.forEach(i=>{if(kTaken(i[0])||(i[0]=='pickle'&&lvl()<5))return;at(i[1],SY+(inR(sr(i),mouse)?-7:0),i[2],D[i[3]])});
+ cloth();plate();if(K.pend)at(640,414-(K.drop.jar||0),.9,D.jmayo);
+ stack(kKeys(),400,410,1,K.drop);const br=kRect();
+ if(br&&inR(br,mouse)){x.strokeStyle='#ffdc3c';x.lineWidth=3;x.beginPath();x.roundRect(...br,10);x.stroke()}
+ btn(BACK,'< Back to restaurant',16);tx('Kitchen',W/2,22,28,'#fff7e6');
+ tx(K.mayo&&!K.bun?'The mayo is on the table. Now pick the bun.':kHas()?'Click the burger on the plate to send it to the counter.':'Click ingredients on the shelf to build a burger.',W/2,54,18,'#e6f0f3');
+ tx(`Counter: ${G.counter.length}/8`,W-16,52,18,'#fff7e6','right')}
+function drawR(){
+ x.fillStyle='#7ea080';x.fillRect(0,0,W,150);x.fillStyle='#b07c4c';x.fillRect(0,150,W,H-150);
+ x.strokeStyle='#96643a';x.lineWidth=2;for(let y=160;y<H;y+=30){x.beginPath();x.moveTo(0,y);x.lineTo(W,y);x.stroke()}
+ rr(0,150,14,160,0,'#5a3c28');tx('Waiting',20,168,16,'#fff0d2','left');
+ rr(120,40,110,70,6,'#5a3c28');rr(124,44,102,62,4,'#b4dceb');
+ const h=inR(KDOOR,mouse)&&!G.sel;rr(633,65,154,260,8,'#5a3c28');rr(...KDOOR,6,h?'#bec8cd':'#96a0a5');
+ el(710,140,34,34,'#648c96');el(710,140,30,30,'#c8e1eb');tx('KITCHEN',710,220,24,'#c8352b');tx('click to cook',710,245,14,'#3c3c46');
+ rr(585,345,210,164,8,'#5f5f69');rr(...COUNTER,8,'#cdcdd4');tx('Counter',690,485,14,'#3c3c46');
+ G.counter.forEach((L,i)=>{const b=brect(i);if(G.sel&&G.sel.t=='b'&&G.sel.i==i){x.strokeStyle='#ffdc3c';x.lineWidth=3;x.beginPath();x.roundRect(b.r[0]-4,b.r[1]-4,b.r[2]+8,b.r[3]+8,8);x.stroke()}stack(L,b.cx,b.b,.22)});
+ const wantT=G.sel&&G.sel.t=='c';
+ [...G.tables].sort((a,b)=>a.y-b.y).forEach(t=>{if(t.o&&t.o.st=='seated')dc(t.o);rr(t.x-6,t.y+10,12,34,0,'#6e4623');el(t.x,t.y+4,56,20,'#c8352b');el(t.x,t.y+3,44,14,'#fff3df');
+  if(wantT&&!t.o){x.strokeStyle='#ffdc3c';x.lineWidth=4;x.beginPath();x.ellipse(t.x,t.y+4,62,26,0,0,7);x.stroke()}});
+ G.C.forEach(c=>{if(c.st=='seated')return;dc(c,G.sel&&G.sel.t=='c'&&G.sel.c===c);
+  if(c.st=='waiting'){const f=Math.max(0,c.pat/c.mp);rr(c.x-22,c.y-100,44,7,3,'#322828');rr(c.x-22,c.y-100,44*f,7,3,mix([220,50,40],[80,200,80],f))}});
+ G.C.forEach(c=>{if(c.st=='seated'&&c.left>0)bubble(c)});
+ tx('Burger Restaurant',W/2,22,28,'#fff7e6');tx(`Served: ${G.served}   Walked out: ${G.lost}`,16,22,16,'#fff7e6','left');
+ tx(G.sel?G.sel.t=='c'?'Click an empty table to seat this customer.':'Click a seated customer or their table to serve it.':'Click a waiting customer to seat them. Click the kitchen to cook.',W/2,54,17,'#ebf5eb')}
+function panel(title,hd,lines,bl){x.fillStyle='#0f141eaf';x.fillRect(0,0,W,H);rr(110,70,580,400,24,'#fff7e6');
+ if(hd){rr(110,70,580,92,[24,24,0,0],'#ffb627');tx(title,W/2,104,42,'#3a2200');tx(hd,W/2,143,22,'#3a2200')}else tx(title,W/2,120,40,'#3a2200');
+ let y=hd?195:190;lines.forEach(([l,z])=>{tx(l,W/2,y,z,'#46322a');y+=z+(hd?11:16)});btn(BTN,bl,24)}
+function draw(){
+ G.scene=='k'?drawK():drawR();
+ if(G.st=='title')return panel('Burger Restaurant',0,[['Click a customer, then a table to seat them.',18],['Cook in the kitchen, then click your burger to send it.',18],['Click a counter burger, then the customer (or table) to serve it.',18],['Picky customers want special burgers. Check the bubbles!',18],['Serve 5 customers to level up. You have 5 minutes!',18]],'Start');
+ if(G.st=='over'){const n=G.served;return panel("Time's up!",0,[[`You served ${n} customer${n!=1?'s':''}!`,28],[n==0?'Every chef starts somewhere. Give it another go!':n<5?"A good start! Next time you'll be even faster.":n<10?'Great work! Your customers left with full bellies.':n<15?'Fantastic! You run a busy, happy kitchen.':"Amazing! You're a true burger legend!",20],[`Level reached: ${lvl()}     Walked out: ${G.lost}`,18]],'Play again')}
+ const t=Math.ceil(G.time);tx(`Level ${lvl()}    ${t/60|0}:${String(t%60).padStart(2,'0')}`,W-16,22,20,t<=30?'#ff7864':'#fff7e6','right');
+ if(G.banner){const n=G.banner;panel('Next level!',`Level ${n}`,n==3?[['Picky customers have arrived!',22],['They order ONE burger made a special way.',18],['Check their thought bubble:',18],["'no mayo' means leave the mayo off.",18],["'no veg' means no lettuce and no tomato.",18],['Serve the wrong burger and they leave unhappy.',18]]
+  :n==5?[['A jar of pickles is now on the kitchen shelf!',22],['Some picky customers want pickles on their burger.',18],["Their thought bubble says 'pickles'.",18],['Nobody else wants pickles, so keep them off other burgers!',18]]
+  :[['Customers arrive faster and order more burgers.',18],['They are a little less patient, too. Keep it up!',18]],'Continue');return}
+ if(performance.now()<G.toast.u){x.font=`700 18px ${F}`;const w=x.measureText(G.toast.m).width+34;rr(W/2-60-w/2,500,w,32,16,'#ffc846');tx(G.toast.m,W/2-60,517,18,'#3a2200')}}
+// ---------- input & loop ----------
+const pt=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}};
+cv.addEventListener('pointermove',e=>mouse=pt(e));
+cv.addEventListener('pointerdown',e=>{au();mouse=pt(e);click(mouse)});
+addEventListener('keydown',e=>{au();
+ if((e.key=='Enter'||e.key==' ')&&G.banner){G.banner=null;e.preventDefault()}
+ else if(e.key=='r'||e.key=='R'||((e.key=='Enter'||e.key==' ')&&G.st!='play')){start();e.preventDefault()}
+ else if(e.key=='Escape'&&G.scene=='k')G.scene='r'});
+newGame();
+(function loop(t){const dt=Math.min(.1,(t-last)/1000);last=t;upd(dt);draw();requestAnimationFrame(loop)})(last);
+</script>
+</body>
+</html>
